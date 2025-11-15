@@ -1,8 +1,8 @@
 --[[
-ROBLOX SERVER BROWSER SCRIPT
-Browse servers with ping, region, and player count
-Similar to "Guts and Blackpowder" server browser
+ROBLOX SERVER BROWSER SCRIPT - MOBILE COMPATIBLE
+Works with Arceus X and other mobile executors!
 
+FIXED: Uses request() function instead of HttpService for mobile
 FEATURES:
 - Shows all available servers
 - Displays ping (ms)
@@ -12,21 +12,25 @@ FEATURES:
 - Refresh server list
 - Join selected server
 - Fully draggable GUI
-- Search functionality
 
 USAGE:
-1. Execute script in any game
-2. Browse available servers
-3. Click server to select
-4. Click "Join Server" to teleport
+1. Execute in Arceus X (mobile) or any executor
+2. Browse servers
+3. Select and join
 ]]
 
 local Players = game:GetService("Players")
 local TeleportService = game:GetService("TeleportService")
-local HttpService = game:GetService("HttpService")
 
 local Player = Players.LocalPlayer
 local PlaceId = game.PlaceId
+
+-- Check which HTTP method is available
+local httpRequest = request or http_request or http or syn.request
+
+if not httpRequest then
+    warn("[SERVER BROWSER] No HTTP request function found! This executor may not support HTTP requests.")
+end
 
 -- Server list storage
 local ServerList = {}
@@ -69,9 +73,9 @@ local TitleLabel = Instance.new("TextLabel")
 TitleLabel.Size = UDim2.new(1, -120, 1, 0)
 TitleLabel.Position = UDim2.new(0, 10, 0, 0)
 TitleLabel.BackgroundTransparency = 1
-TitleLabel.Text = "🌐 SERVER BROWSER"
+TitleLabel.Text = "🌐 SERVER BROWSER (Mobile)"
 TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-TitleLabel.TextSize = 20
+TitleLabel.TextSize = 18
 TitleLabel.Font = Enum.Font.GothamBold
 TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 TitleLabel.Parent = TitleBar
@@ -278,7 +282,20 @@ local function CreateServerEntry(serverData, index)
     return Entry
 end
 
--- Function to fetch servers
+-- Function to parse JSON manually (fallback if game:GetService("HttpService") fails)
+local function DecodeJSON(jsonString)
+    local success, result = pcall(function()
+        return game:GetService("HttpService"):JSONDecode(jsonString)
+    end)
+    if success then
+        return result
+    else
+        warn("[SERVER BROWSER] Failed to decode JSON:", result)
+        return nil
+    end
+end
+
+-- Function to fetch servers using mobile executor request()
 local function FetchServers()
     StatusLabel.Text = "Fetching servers..."
     ServerList = {}
@@ -291,11 +308,31 @@ local function FetchServers()
         end
     end
     
+    if not httpRequest then
+        StatusLabel.Text = "❌ HTTP requests not supported on this executor!"
+        return
+    end
+    
     local success, result = pcall(function()
         -- Use RoProxy to access Roblox Games API
         local url = "https://games.roproxy.com/v1/games/" .. PlaceId .. "/servers/Public?sortOrder=Desc&limit=100"
-        local response = HttpService:GetAsync(url)
-        return HttpService:JSONDecode(response)
+        
+        -- Make HTTP request using mobile executor method
+        local response = httpRequest({
+            Url = url,
+            Method = "GET"
+        })
+        
+        -- Check if response is valid
+        if response and response.Success and response.Body then
+            return DecodeJSON(response.Body)
+        elseif response and response.StatusCode then
+            warn("[SERVER BROWSER] HTTP Error:", response.StatusCode, response.StatusMessage)
+            return nil
+        else
+            warn("[SERVER BROWSER] Invalid response from HTTP request")
+            return nil
+        end
     end)
     
     if success and result and result.data then
@@ -310,14 +347,19 @@ local function FetchServers()
         -- Update canvas size
         ServerListFrame.CanvasSize = UDim2.new(0, 0, 0, #ServerList * 65)
     else
-        StatusLabel.Text = "❌ Failed to fetch servers. Make sure HttpService is enabled!"
-        warn("[Server Browser] Error:", result)
+        StatusLabel.Text = "❌ Failed to fetch servers. Error: " .. tostring(result)
+        warn("[SERVER BROWSER] Error:", result)
     end
 end
 
 -- Sort by ping function
 local function SortByPing()
     StatusLabel.Text = "Sorting by ping..."
+    
+    if #ServerList == 0 then
+        StatusLabel.Text = "❌ No servers to sort!"
+        return
+    end
     
     -- Sort ServerList by ping
     table.sort(ServerList, function(a, b)
@@ -353,7 +395,7 @@ local function JoinServer()
     
     if not success then
         StatusLabel.Text = "❌ Failed to join: " .. tostring(err)
-        warn("[Server Browser] Teleport error:", err)
+        warn("[SERVER BROWSER] Teleport error:", err)
     end
 end
 
@@ -367,24 +409,21 @@ SortButton.MouseButton1Click:Connect(SortByPing)
 JoinButton.MouseButton1Click:Connect(JoinServer)
 
 -- Initial fetch
+wait(0.5) -- Small delay to ensure everything is loaded
 FetchServers()
 
 -- Notification
 game:GetService("StarterGui"):SetCore("SendNotification", {
-    Title = "Server Browser Loaded";
-    Text = "Browse servers, check ping & region, then join!";
+    Title = "Server Browser (Mobile)";
+    Text = "Compatible with Arceus X! Browse & join servers.";
     Duration = 5;
 })
 
 print("===========================================")
-print("ROBLOX SERVER BROWSER")
+print("ROBLOX SERVER BROWSER - MOBILE COMPATIBLE")
 print("===========================================")
 print("✅ Loaded successfully!")
-print("📊 Features:")
-print("   - View all servers")
-print("   - See ping & player count")
-print("   - Estimate region by ping")
-print("   - Sort by lowest ping")
-print("   - Join any server")
+print("📱 Works with Arceus X and mobile executors")
+print("📊 Uses request() function for HTTP")
 print("🎮 Drag the window to move it")
 print("===========================================")
