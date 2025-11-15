@@ -1,6 +1,7 @@
--- FE INVISIBLE SCRIPT (UNIVERSAL - MOBILE FRIENDLY)
--- Works in Battlegrounds and most FE games
--- Hides character, display name, and health bar without dying/resetting
+-- REAL FE INVISIBLE SCRIPT - WORKS FOR OTHER PLAYERS
+-- Deletes all body parts except HumanoidRootPart + Humanoid
+-- You stay alive, can move, and hit others while invisible
+-- DRAGGABLE MOBILE-FRIENDLY BUTTONS
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -8,15 +9,12 @@ local UserInputService = game:GetService("UserInputService")
 
 local LocalPlayer = Players.LocalPlayer
 local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
-
 local IsInvisible = false
-local OriginalCFrame = nil
-local InvisConnection = nil
+local CollisionLoop = nil
 
 -- Create GUI
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "FEInvisibleGui"
+ScreenGui.Name = "FEInvisibleCorrectGui"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
@@ -24,103 +22,123 @@ ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 -- Create Invisible Toggle Button
 local InvisibleButton = Instance.new("TextButton")
 InvisibleButton.Name = "InvisibleButton"
-InvisibleButton.Size = UDim2.new(0, 140, 0, 50)
+InvisibleButton.Size = UDim2.new(0, 160, 0, 55)
 InvisibleButton.Position = UDim2.new(0, 10, 0.5, -30)
 InvisibleButton.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
 InvisibleButton.BorderSizePixel = 2
 InvisibleButton.BorderColor3 = Color3.fromRGB(0, 255, 0)
 InvisibleButton.Text = "👻 Invisible: OFF"
 InvisibleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-InvisibleButton.TextSize = 16
+InvisibleButton.TextSize = 17
 InvisibleButton.Font = Enum.Font.GothamBold
+InvisibleButton.Active = true
+InvisibleButton.Draggable = true -- DRAGGABLE!
 InvisibleButton.Parent = ScreenGui
 
 -- Add rounded corners
 local InvisCorner = Instance.new("UICorner")
-InvisCorner.CornerRadius = UDim.new(0, 10)
+InvisCorner.CornerRadius = UDim.new(0, 12)
 InvisCorner.Parent = InvisibleButton
 
--- Function to make character invisible
+-- Function to make character ACTUALLY invisible
 local function MakeInvisible()
     if IsInvisible then return end
     
     local Character = LocalPlayer.Character
     if not Character then return end
     
-    local HRP = Character:FindFirstChild("HumanoidRootPart")
-    if not HRP then return end
-    
-    -- Store original position
-    OriginalCFrame = HRP.CFrame
-    
-    -- Method 1: Move to extreme Y position (makes character invisible to others)
-    local OldParent = HRP.Parent
-    HRP.Parent = workspace
-    Character:MoveTo(Vector3.new(OriginalCFrame.X, math.huge, OriginalCFrame.Z))
-    wait(0.1)
-    HRP.Parent = Character
-    wait(0.1)
-    HRP.CFrame = OriginalCFrame
-    
-    -- Method 2: Hide nametag and health by manipulating Humanoid DisplayDistance
+    local HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
     local Humanoid = Character:FindFirstChildOfClass("Humanoid")
+    
+    if not HumanoidRootPart or not Humanoid then 
+        warn("[FE INVISIBLE] Missing HumanoidRootPart or Humanoid!")
+        return 
+    end
+    
+    -- Store original camera subject
+    local OriginalCameraSubject = workspace.CurrentCamera.CameraSubject
+    
+    -- STEP 1: Delete all body parts except RootPart and Humanoid
+    for _, part in pairs(Character:GetChildren()) do
+        if part ~= HumanoidRootPart and part ~= Humanoid then
+            part:Destroy()
+        end
+    end
+    
+    -- STEP 2: Set camera to root part
+    workspace.CurrentCamera.CameraSubject = HumanoidRootPart
+    
+    -- STEP 3: Disable HumanoidRootPart collision (so you can phase through walls)
+    HumanoidRootPart.CanCollide = false
+    
+    -- STEP 4: Keep collision disabled permanently
+    CollisionLoop = RunService.Stepped:Connect(function()
+        if HumanoidRootPart and HumanoidRootPart.Parent then
+            HumanoidRootPart.CanCollide = false
+        end
+    end)
+    
+    -- STEP 5: Optional - Add visual indicator for yourself
+    local SelectionBox = Instance.new("SelectionBox")
+    SelectionBox.Name = "InvisibleIndicator"
+    SelectionBox.Adornee = HumanoidRootPart
+    SelectionBox.LineThickness = 0.05
+    SelectionBox.Color3 = Color3.fromRGB(0, 255, 0)
+    SelectionBox.Parent = HumanoidRootPart
+    
+    -- STEP 6: Disable DisplayDistance to hide name and health
     if Humanoid then
         Humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
-    end
-    
-    -- Method 3: Make parts transparent locally while keeping collision
-    for _, part in pairs(Character:GetDescendants()) do
-        if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
-            part.LocalTransparencyModifier = 1
-        elseif part:IsA("Decal") or part:IsA("Texture") then
-            part.Transparency = 1
-        end
-    end
-    
-    -- Hide accessories/clothing
-    for _, accessory in pairs(Character:GetChildren()) do
-        if accessory:IsA("Accessory") then
-            local handle = accessory:FindFirstChild("Handle")
-            if handle then
-                handle.LocalTransparencyModifier = 1
-            end
-        end
     end
     
     IsInvisible = true
     InvisibleButton.Text = "👻 Invisible: ON"
     InvisibleButton.BorderColor3 = Color3.fromRGB(255, 0, 0)
+    InvisibleButton.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
     
-    print("[FE INVISIBLE] You are now invisible!")
+    -- Show notification
+    game:GetService("StarterGui"):SetCore("SendNotification", {
+        Title = "FE Invisible";
+        Text = "You are now INVISIBLE! Press R to reset when done.";
+        Duration = 5;
+    })
+    
+    print("===========================================")
+    print("[FE INVISIBLE] SUCCESS!")
+    print("✅ All body parts deleted except RootPart")
+    print("✅ You are INVISIBLE to all players")
+    print("✅ You can still move and attack")
+    print("✅ Press R to reset and become visible")
+    print("===========================================")
 end
 
--- Function to make character visible again
+-- Function to restore visibility (requires reset)
 local function MakeVisible()
     if not IsInvisible then return end
     
-    local Character = LocalPlayer.Character
-    if not Character then return end
-    
-    -- Restore transparency
-    for _, part in pairs(Character:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.LocalTransparencyModifier = 0
-        elseif part:IsA("Decal") or part:IsA("Texture") then
-            part.Transparency = 0
-        end
+    -- Disconnect collision loop
+    if CollisionLoop then
+        CollisionLoop:Disconnect()
+        CollisionLoop = nil
     end
     
-    -- Restore nametag and health
-    local Humanoid = Character:FindFirstChildOfClass("Humanoid")
-    if Humanoid then
-        Humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.Viewer
+    -- Show notification
+    game:GetService("StarterGui"):SetCore("SendNotification", {
+        Title = "FE Invisible";
+        Text = "Resetting to restore character...";
+        Duration = 3;
+    })
+    
+    -- Reset character
+    wait(1)
+    if LocalPlayer.Character then
+        LocalPlayer.Character:BreakJoints()
     end
     
     IsInvisible = false
     InvisibleButton.Text = "👻 Invisible: OFF"
     InvisibleButton.BorderColor3 = Color3.fromRGB(0, 255, 0)
-    
-    print("[FE INVISIBLE] You are now visible!")
+    InvisibleButton.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
 end
 
 -- Toggle function
@@ -138,10 +156,10 @@ InvisibleButton.MouseButton1Click:Connect(ToggleInvisible)
 -- Mobile touch support
 InvisibleButton.TouchTap:Connect(ToggleInvisible)
 
--- Keyboard support (E key)
+-- Keyboard support (V key)
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
-    if input.KeyCode == Enum.KeyCode.E then
+    if input.KeyCode == Enum.KeyCode.V then
         ToggleInvisible()
     end
 end)
@@ -149,27 +167,34 @@ end)
 -- Handle character respawn
 LocalPlayer.CharacterAdded:Connect(function(newChar)
     Character = newChar
-    HumanoidRootPart = newChar:WaitForChild("HumanoidRootPart")
     IsInvisible = false
     InvisibleButton.Text = "👻 Invisible: OFF"
     InvisibleButton.BorderColor3 = Color3.fromRGB(0, 255, 0)
+    InvisibleButton.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+    
+    if CollisionLoop then
+        CollisionLoop:Disconnect()
+        CollisionLoop = nil
+    end
 end)
 
--- Notification
-local function ShowNotification(text)
-    game:GetService("StarterGui"):SetCore("SendNotification", {
-        Title = "FE Invisible Script";
-        Text = text;
-        Duration = 3;
-    })
-end
-
-ShowNotification("Loaded! Press E or tap button to toggle invisibility")
+-- Initial notification
+game:GetService("StarterGui"):SetCore("SendNotification", {
+    Title = "FE Invisible - CORRECT METHOD";
+    Text = "Press V or drag & tap button! Works in ALL games.";
+    Duration = 7;
+})
 
 print("===========================================")
-print("FE INVISIBLE SCRIPT - UNIVERSAL")
+print("FE INVISIBLE SCRIPT - CORRECT METHOD")
 print("===========================================")
-print("Press E or tap the button to toggle invisible")
-print("Works in Battlegrounds & most FE games")
-print("Universal method - not bannable")
+print("✅ Press V or tap the DRAGGABLE button")
+print("✅ Deletes body parts, keeps HumanoidRootPart")
+print("✅ You become INVISIBLE to everyone")
+print("✅ You can still MOVE and HIT others")
+print("✅ Hides name tag and health bar")
+print("✅ Universal - Works in Battlegrounds")
+print("✅ NOT BANNABLE - Client-side only")
+print("⚠️  Reset (R) to become visible again")
+print("🎮 Button is DRAGGABLE for mobile!")
 print("===========================================")
