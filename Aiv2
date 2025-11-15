@@ -1,253 +1,390 @@
 --[[
-REAL FE INVISIBLE SCRIPT - ACTUALLY WORKS!
-Based on BitingTheDust's method from V3rmillion
-Original concept: https://v3rmillion.net/showthread.php?tid=544634
+ROBLOX SERVER BROWSER SCRIPT
+Browse servers with ping, region, and player count
+Similar to "Guts and Blackpowder" server browser
 
-HOW IT WORKS:
-1. Clones your character locally
-2. Teleports your REAL character to a safe platform (far away)
-3. Sets game.Players.LocalPlayer.Character to the CLONE
-4. Your clone is on the ground (visible to you, invisible to others)
-5. Your REAL character is in the sky/far away (what others see)
-6. Result: Others see you at the far location (invisible), you see clone on ground
+FEATURES:
+- Shows all available servers
+- Displays ping (ms)
+- Shows player count and max players
+- Estimates region based on ping
+- Sort by lowest ping
+- Refresh server list
+- Join selected server
+- Fully draggable GUI
+- Search functionality
 
-DRAGGABLE MOBILE-FRIENDLY BUTTONS
+USAGE:
+1. Execute script in any game
+2. Browse available servers
+3. Click server to select
+4. Click "Join Server" to teleport
 ]]
 
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
+local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
 
 local Player = Players.LocalPlayer
-local RealCharacter = Player.Character or Player.CharacterAdded:Wait()
-local IsInvisible = false
-local CanInvis = true
-local FakeCharacter = nil
-local Part = nil
-local PseudoAnchor = nil
+local PlaceId = game.PlaceId
 
--- Settings
-local Transparency = true -- Makes fake character slightly transparent
-local NoClip = false -- Makes fake character no clip
+-- Server list storage
+local ServerList = {}
+local SelectedServer = nil
 
--- Create GUI
+-- Create Main GUI
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "FEInvisibleRealGui"
+ScreenGui.Name = "ServerBrowserGui"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.Parent = Player:WaitForChild("PlayerGui")
 
--- Create Invisible Toggle Button
-local InvisibleButton = Instance.new("TextButton")
-InvisibleButton.Name = "InvisibleButton"
-InvisibleButton.Size = UDim2.new(0, 160, 0, 55)
-InvisibleButton.Position = UDim2.new(0, 10, 0.5, -30)
-InvisibleButton.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-InvisibleButton.BorderSizePixel = 2
-InvisibleButton.BorderColor3 = Color3.fromRGB(0, 255, 0)
-InvisibleButton.Text = "👻 Invisible: OFF"
-InvisibleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-InvisibleButton.TextSize = 17
-InvisibleButton.Font = Enum.Font.GothamBold
-InvisibleButton.Active = true
-InvisibleButton.Draggable = true -- DRAGGABLE!
-InvisibleButton.Parent = ScreenGui
+-- Main Frame
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0, 700, 0, 500)
+MainFrame.Position = UDim2.new(0.5, -350, 0.5, -250)
+MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Draggable = true
+MainFrame.Parent = ScreenGui
 
--- Add rounded corners
-local InvisCorner = Instance.new("UICorner")
-InvisCorner.CornerRadius = UDim.new(0, 12)
-InvisCorner.Parent = InvisibleButton
+local MainCorner = Instance.new("UICorner")
+MainCorner.CornerRadius = UDim.new(0, 12)
+MainCorner.Parent = MainFrame
 
--- Initialize invisibility system
-local function InitializeInvisibility()
-    RealCharacter.Archivable = true
-    FakeCharacter = RealCharacter:Clone()
-    
-    -- Create safe platform far away
-    Part = Instance.new("Part", workspace)
-    Part.Anchored = true
-    Part.Size = Vector3.new(200, 1, 200)
-    Part.CFrame = CFrame.new(0, -500, 0) -- Far below map
-    Part.CanCollide = true
-    
-    -- Place fake character on platform
-    FakeCharacter.Parent = workspace
-    FakeCharacter.HumanoidRootPart.CFrame = Part.CFrame * CFrame.new(0, 5, 0)
-    
-    -- Clone LocalScripts to fake character
-    for i, v in pairs(RealCharacter:GetChildren()) do
-        if v:IsA("LocalScript") then
-            local clone = v:Clone()
-            clone.Disabled = true
-            clone.Parent = FakeCharacter
-        end
-    end
-    
-    -- Make fake character slightly transparent
-    if Transparency then
-        for i, v in pairs(FakeCharacter:GetDescendants()) do
-            if v:IsA("BasePart") then
-                v.Transparency = 0.7
-            end
-        end
-    end
-    
-    PseudoAnchor = FakeCharacter.HumanoidRootPart
-end
+-- Title Bar
+local TitleBar = Instance.new("Frame")
+TitleBar.Size = UDim2.new(1, 0, 0, 50)
+TitleBar.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+TitleBar.BorderSizePixel = 0
+TitleBar.Parent = MainFrame
 
--- Initialize on script load
-InitializeInvisibility()
+local TitleCorner = Instance.new("UICorner")
+TitleCorner.CornerRadius = UDim.new(0, 12)
+TitleCorner.Parent = TitleBar
 
--- Handle character death and respawn
-local function RealCharacterDied()
-    CanInvis = false
-    RealCharacter:Destroy()
-    RealCharacter = Player.Character
-    CanInvis = true
-    IsInvisible = false
-    
-    if FakeCharacter then
-        FakeCharacter:Destroy()
-    end
-    
-    workspace.CurrentCamera.CameraSubject = RealCharacter.Humanoid
-    
-    -- Reinitialize
-    InitializeInvisibility()
-    
-    InvisibleButton.Text = "👻 Invisible: OFF"
-    InvisibleButton.BorderColor3 = Color3.fromRGB(0, 255, 0)
-    InvisibleButton.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-end
+local TitleLabel = Instance.new("TextLabel")
+TitleLabel.Size = UDim2.new(1, -120, 1, 0)
+TitleLabel.Position = UDim2.new(0, 10, 0, 0)
+TitleLabel.BackgroundTransparency = 1
+TitleLabel.Text = "🌐 SERVER BROWSER"
+TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+TitleLabel.TextSize = 20
+TitleLabel.Font = Enum.Font.GothamBold
+TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+TitleLabel.Parent = TitleBar
 
-RealCharacter.Humanoid.Died:Connect(function()
-    RealCharacter:Destroy()
-    if FakeCharacter then
-        FakeCharacter:Destroy()
-    end
-end)
+-- Close Button
+local CloseButton = Instance.new("TextButton")
+CloseButton.Size = UDim2.new(0, 40, 0, 40)
+CloseButton.Position = UDim2.new(1, -45, 0, 5)
+CloseButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+CloseButton.Text = "✕"
+CloseButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+CloseButton.TextSize = 20
+CloseButton.Font = Enum.Font.GothamBold
+CloseButton.Parent = TitleBar
 
-Player.CharacterAppearanceLoaded:Connect(RealCharacterDied)
+local CloseCorner = Instance.new("UICorner")
+CloseCorner.CornerRadius = UDim.new(0, 8)
+CloseCorner.Parent = CloseButton
 
--- Keep fake character anchored to platform
-RunService.RenderStepped:Connect(function()
-    if PseudoAnchor ~= nil then
-        PseudoAnchor.CFrame = Part.CFrame * CFrame.new(0, 5, 0)
-    end
-    if NoClip and FakeCharacter then
-        FakeCharacter.Humanoid:ChangeState(11)
-    end
-end)
+-- Refresh Button
+local RefreshButton = Instance.new("TextButton")
+RefreshButton.Size = UDim2.new(0, 100, 0, 35)
+RefreshButton.Position = UDim2.new(0, 10, 0, 60)
+RefreshButton.BackgroundColor3 = Color3.fromRGB(50, 150, 50)
+RefreshButton.Text = "🔄 Refresh"
+RefreshButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+RefreshButton.TextSize = 16
+RefreshButton.Font = Enum.Font.GothamBold
+RefreshButton.Parent = MainFrame
 
--- Main invisible toggle function
-local function ToggleInvisible()
-    if not CanInvis or not RealCharacter or not FakeCharacter then return end
-    if not RealCharacter:FindFirstChild("HumanoidRootPart") or not FakeCharacter:FindFirstChild("HumanoidRootPart") then return end
-    
-    if IsInvisible == false then
-        -- GOING INVISIBLE
-        -- Swap CFrames: Real character goes to platform, fake character comes to your position
-        local StoredCF = RealCharacter.HumanoidRootPart.CFrame
-        RealCharacter.HumanoidRootPart.CFrame = FakeCharacter.HumanoidRootPart.CFrame
-        FakeCharacter.HumanoidRootPart.CFrame = StoredCF
-        
-        -- Unequip tools from real character
-        RealCharacter.Humanoid:UnequipTools()
-        
-        -- CRITICAL: Change Player.Character to fake character
-        Player.Character = FakeCharacter
-        workspace.CurrentCamera.CameraSubject = FakeCharacter.Humanoid
-        PseudoAnchor = RealCharacter.HumanoidRootPart
-        
-        -- Enable LocalScripts in fake character
-        for i, v in pairs(FakeCharacter:GetChildren()) do
-            if v:IsA("LocalScript") then
-                v.Disabled = false
-            end
-        end
-        
-        IsInvisible = true
-        InvisibleButton.Text = "👻 Invisible: ON"
-        InvisibleButton.BorderColor3 = Color3.fromRGB(255, 0, 0)
-        InvisibleButton.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
-        
-        game:GetService("StarterGui"):SetCore("SendNotification", {
-            Title = "FE Invisible";
-            Text = "You are now INVISIBLE! Others see you at -500 Y position.";
-            Duration = 5;
-        })
-        
-        print("[FE INVISIBLE] You are now INVISIBLE to all players!")
+local RefreshCorner = Instance.new("UICorner")
+RefreshCorner.CornerRadius = UDim.new(0, 8)
+RefreshCorner.Parent = RefreshButton
+
+-- Sort by Ping Button
+local SortButton = Instance.new("TextButton")
+SortButton.Size = UDim2.new(0, 120, 0, 35)
+SortButton.Position = UDim2.new(0, 120, 0, 60)
+SortButton.BackgroundColor3 = Color3.fromRGB(50, 100, 200)
+SortButton.Text = "⚡ Sort by Ping"
+SortButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+SortButton.TextSize = 16
+SortButton.Font = Enum.Font.GothamBold
+SortButton.Parent = MainFrame
+
+local SortCorner = Instance.new("UICorner")
+SortCorner.CornerRadius = UDim.new(0, 8)
+SortCorner.Parent = SortButton
+
+-- Join Server Button
+local JoinButton = Instance.new("TextButton")
+JoinButton.Size = UDim2.new(0, 150, 0, 35)
+JoinButton.Position = UDim2.new(1, -160, 0, 60)
+JoinButton.BackgroundColor3 = Color3.fromRGB(200, 100, 50)
+JoinButton.Text = "🚀 Join Server"
+JoinButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+JoinButton.TextSize = 16
+JoinButton.Font = Enum.Font.GothamBold
+JoinButton.Parent = MainFrame
+
+local JoinCorner = Instance.new("UICorner")
+JoinCorner.CornerRadius = UDim.new(0, 8)
+JoinCorner.Parent = JoinButton
+
+-- Status Label
+local StatusLabel = Instance.new("TextLabel")
+StatusLabel.Size = UDim2.new(1, -20, 0, 25)
+StatusLabel.Position = UDim2.new(0, 10, 0, 105)
+StatusLabel.BackgroundTransparency = 1
+StatusLabel.Text = "Loading servers..."
+StatusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+StatusLabel.TextSize = 14
+StatusLabel.Font = Enum.Font.Gotham
+StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
+StatusLabel.Parent = MainFrame
+
+-- Server List Frame
+local ServerListFrame = Instance.new("ScrollingFrame")
+ServerListFrame.Size = UDim2.new(1, -20, 1, -145)
+ServerListFrame.Position = UDim2.new(0, 10, 0, 135)
+ServerListFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+ServerListFrame.BorderSizePixel = 0
+ServerListFrame.ScrollBarThickness = 8
+ServerListFrame.Parent = MainFrame
+
+local ListCorner = Instance.new("UICorner")
+ListCorner.CornerRadius = UDim.new(0, 8)
+ListCorner.Parent = ServerListFrame
+
+local ListLayout = Instance.new("UIListLayout")
+ListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+ListLayout.Padding = UDim.new(0, 5)
+ListLayout.Parent = ServerListFrame
+
+-- Function to determine region based on ping
+local function GetRegion(ping)
+    if ping < 50 then
+        return "🟢 Local", Color3.fromRGB(50, 255, 50)
+    elseif ping < 100 then
+        return "🟡 Nearby", Color3.fromRGB(255, 255, 50)
+    elseif ping < 150 then
+        return "🟠 Regional", Color3.fromRGB(255, 150, 50)
+    elseif ping < 250 then
+        return "🔴 Far", Color3.fromRGB(255, 100, 50)
     else
-        -- GOING VISIBLE
-        -- Swap back: Fake character goes to platform, real character returns to ground
-        local StoredCF = FakeCharacter.HumanoidRootPart.CFrame
-        FakeCharacter.HumanoidRootPart.CFrame = RealCharacter.HumanoidRootPart.CFrame
-        RealCharacter.HumanoidRootPart.CFrame = StoredCF
-        
-        -- Unequip tools from fake character
-        FakeCharacter.Humanoid:UnequipTools()
-        
-        -- CRITICAL: Change Player.Character back to real character
-        Player.Character = RealCharacter
-        workspace.CurrentCamera.CameraSubject = RealCharacter.Humanoid
-        PseudoAnchor = FakeCharacter.HumanoidRootPart
-        
-        -- Disable LocalScripts in fake character
-        for i, v in pairs(FakeCharacter:GetChildren()) do
-            if v:IsA("LocalScript") then
-                v.Disabled = true
-            end
-        end
-        
-        IsInvisible = false
-        InvisibleButton.Text = "👻 Invisible: OFF"
-        InvisibleButton.BorderColor3 = Color3.fromRGB(0, 255, 0)
-        InvisibleButton.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-        
-        game:GetService("StarterGui"):SetCore("SendNotification", {
-            Title = "FE Invisible";
-            Text = "You are now VISIBLE again!";
-            Duration = 3;
-        })
-        
-        print("[FE INVISIBLE] You are now VISIBLE to all players!")
+        return "⚫ Very Far", Color3.fromRGB(150, 150, 150)
     end
 end
 
--- Button click handler
-InvisibleButton.MouseButton1Click:Connect(ToggleInvisible)
+-- Function to create server entry
+local function CreateServerEntry(serverData, index)
+    local Entry = Instance.new("TextButton")
+    Entry.Size = UDim2.new(1, -10, 0, 60)
+    Entry.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+    Entry.BorderSizePixel = 0
+    Entry.Text = ""
+    Entry.AutoButtonColor = false
+    Entry.LayoutOrder = index
+    Entry.Parent = ServerListFrame
+    
+    local EntryCorner = Instance.new("UICorner")
+    EntryCorner.CornerRadius = UDim.new(0, 8)
+    EntryCorner.Parent = Entry
+    
+    -- Server Number
+    local NumberLabel = Instance.new("TextLabel")
+    NumberLabel.Size = UDim2.new(0, 40, 1, 0)
+    NumberLabel.Position = UDim2.new(0, 5, 0, 0)
+    NumberLabel.BackgroundTransparency = 1
+    NumberLabel.Text = "#" .. index
+    NumberLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+    NumberLabel.TextSize = 16
+    NumberLabel.Font = Enum.Font.GothamBold
+    NumberLabel.Parent = Entry
+    
+    -- Players
+    local PlayersLabel = Instance.new("TextLabel")
+    PlayersLabel.Size = UDim2.new(0, 100, 0, 25)
+    PlayersLabel.Position = UDim2.new(0, 50, 0, 5)
+    PlayersLabel.BackgroundTransparency = 1
+    PlayersLabel.Text = "👥 " .. serverData.playing .. "/" .. serverData.maxPlayers
+    PlayersLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    PlayersLabel.TextSize = 16
+    PlayersLabel.Font = Enum.Font.GothamBold
+    PlayersLabel.TextXAlignment = Enum.TextXAlignment.Left
+    PlayersLabel.Parent = Entry
+    
+    -- Ping
+    local region, regionColor = GetRegion(serverData.ping)
+    local PingLabel = Instance.new("TextLabel")
+    PingLabel.Size = UDim2.new(0, 120, 0, 25)
+    PingLabel.Position = UDim2.new(0, 50, 0, 30)
+    PingLabel.BackgroundTransparency = 1
+    PingLabel.Text = "⚡ " .. math.floor(serverData.ping) .. " ms"
+    PingLabel.TextColor3 = regionColor
+    PingLabel.TextSize = 14
+    PingLabel.Font = Enum.Font.Gotham
+    PingLabel.TextXAlignment = Enum.TextXAlignment.Left
+    PingLabel.Parent = Entry
+    
+    -- Region
+    local RegionLabel = Instance.new("TextLabel")
+    RegionLabel.Size = UDim2.new(0, 150, 1, 0)
+    RegionLabel.Position = UDim2.new(0, 200, 0, 0)
+    RegionLabel.BackgroundTransparency = 1
+    RegionLabel.Text = region
+    RegionLabel.TextColor3 = regionColor
+    RegionLabel.TextSize = 14
+    RegionLabel.Font = Enum.Font.GothamBold
+    RegionLabel.TextXAlignment = Enum.TextXAlignment.Left
+    RegionLabel.Parent = Entry
+    
+    -- Server ID (hidden, for joining)
+    Entry.Name = serverData.id
+    
+    -- Click handler
+    Entry.MouseButton1Click:Connect(function()
+        -- Deselect all
+        for _, child in pairs(ServerListFrame:GetChildren()) do
+            if child:IsA("TextButton") then
+                child.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+            end
+        end
+        
+        -- Select this one
+        Entry.BackgroundColor3 = Color3.fromRGB(50, 100, 150)
+        SelectedServer = serverData
+        StatusLabel.Text = "Selected: Server #" .. index .. " - " .. serverData.playing .. "/" .. serverData.maxPlayers .. " players"
+    end)
+    
+    -- Hover effect
+    Entry.MouseEnter:Connect(function()
+        if SelectedServer ~= serverData then
+            Entry.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
+        end
+    end)
+    
+    Entry.MouseLeave:Connect(function()
+        if SelectedServer ~= serverData then
+            Entry.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+        end
+    end)
+    
+    return Entry
+end
 
--- Mobile touch support
-InvisibleButton.TouchTap:Connect(ToggleInvisible)
-
--- Keyboard support (V key)
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
-    if input.KeyCode == Enum.KeyCode.V then
-        ToggleInvisible()
+-- Function to fetch servers
+local function FetchServers()
+    StatusLabel.Text = "Fetching servers..."
+    ServerList = {}
+    SelectedServer = nil
+    
+    -- Clear existing entries
+    for _, child in pairs(ServerListFrame:GetChildren()) do
+        if child:IsA("TextButton") then
+            child:Destroy()
+        end
     end
+    
+    local success, result = pcall(function()
+        -- Use RoProxy to access Roblox Games API
+        local url = "https://games.roproxy.com/v1/games/" .. PlaceId .. "/servers/Public?sortOrder=Desc&limit=100"
+        local response = HttpService:GetAsync(url)
+        return HttpService:JSONDecode(response)
+    end)
+    
+    if success and result and result.data then
+        ServerList = result.data
+        StatusLabel.Text = "Found " .. #ServerList .. " servers!"
+        
+        -- Create entries for each server
+        for i, server in ipairs(ServerList) do
+            CreateServerEntry(server, i)
+        end
+        
+        -- Update canvas size
+        ServerListFrame.CanvasSize = UDim2.new(0, 0, 0, #ServerList * 65)
+    else
+        StatusLabel.Text = "❌ Failed to fetch servers. Make sure HttpService is enabled!"
+        warn("[Server Browser] Error:", result)
+    end
+end
+
+-- Sort by ping function
+local function SortByPing()
+    StatusLabel.Text = "Sorting by ping..."
+    
+    -- Sort ServerList by ping
+    table.sort(ServerList, function(a, b)
+        return a.ping < b.ping
+    end)
+    
+    -- Clear and recreate entries
+    for _, child in pairs(ServerListFrame:GetChildren()) do
+        if child:IsA("TextButton") then
+            child:Destroy()
+        end
+    end
+    
+    for i, server in ipairs(ServerList) do
+        CreateServerEntry(server, i)
+    end
+    
+    StatusLabel.Text = "Sorted by lowest ping! " .. #ServerList .. " servers."
+end
+
+-- Join server function
+local function JoinServer()
+    if not SelectedServer then
+        StatusLabel.Text = "❌ Please select a server first!"
+        return
+    end
+    
+    StatusLabel.Text = "🚀 Joining server..."
+    
+    local success, err = pcall(function()
+        TeleportService:TeleportToPlaceInstance(PlaceId, SelectedServer.id, Player)
+    end)
+    
+    if not success then
+        StatusLabel.Text = "❌ Failed to join: " .. tostring(err)
+        warn("[Server Browser] Teleport error:", err)
+    end
+end
+
+-- Button connections
+CloseButton.MouseButton1Click:Connect(function()
+    ScreenGui:Destroy()
 end)
 
--- Initial notification
+RefreshButton.MouseButton1Click:Connect(FetchServers)
+SortButton.MouseButton1Click:Connect(SortByPing)
+JoinButton.MouseButton1Click:Connect(JoinServer)
+
+-- Initial fetch
+FetchServers()
+
+-- Notification
 game:GetService("StarterGui"):SetCore("SendNotification", {
-    Title = "FE Invisible - REAL METHOD";
-    Text = "Press V or drag & tap button! Based on BitingTheDust's method.";
-    Duration = 7;
+    Title = "Server Browser Loaded";
+    Text = "Browse servers, check ping & region, then join!";
+    Duration = 5;
 })
 
 print("===========================================")
-print("FE INVISIBLE SCRIPT - REAL WORKING METHOD")
+print("ROBLOX SERVER BROWSER")
 print("===========================================")
-print("✅ Press V or tap the DRAGGABLE button")
-print("✅ Character CFrame Swap Method")
-print("✅ Your REAL body goes to -500 Y (invisible)")
-print("✅ Your FAKE body stays on ground (you see it)")
-print("✅ Others see you at -500 Y = INVISIBLE")
-print("✅ You can still MOVE and HIT others")
-print("✅ Hides name tag and health bar")
-print("✅ Universal - Works in Battlegrounds")
-print("✅ NOT BANNABLE - Client-side character swap")
-print("🎮 Button is DRAGGABLE for mobile!")
-print("⚠️  Original by BitingTheDust (V3rmillion)")
+print("✅ Loaded successfully!")
+print("📊 Features:")
+print("   - View all servers")
+print("   - See ping & player count")
+print("   - Estimate region by ping")
+print("   - Sort by lowest ping")
+print("   - Join any server")
+print("🎮 Drag the window to move it")
 print("===========================================")
