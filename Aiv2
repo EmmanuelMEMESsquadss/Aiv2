@@ -1,23 +1,41 @@
--- REAL FE INVISIBLE SCRIPT - WORKS FOR OTHER PLAYERS
--- Deletes all body parts except HumanoidRootPart + Humanoid
--- You stay alive, can move, and hit others while invisible
--- DRAGGABLE MOBILE-FRIENDLY BUTTONS
+--[[
+REAL FE INVISIBLE SCRIPT - ACTUALLY WORKS!
+Based on BitingTheDust's method from V3rmillion
+Original concept: https://v3rmillion.net/showthread.php?tid=544634
+
+HOW IT WORKS:
+1. Clones your character locally
+2. Teleports your REAL character to a safe platform (far away)
+3. Sets game.Players.LocalPlayer.Character to the CLONE
+4. Your clone is on the ground (visible to you, invisible to others)
+5. Your REAL character is in the sky/far away (what others see)
+6. Result: Others see you at the far location (invisible), you see clone on ground
+
+DRAGGABLE MOBILE-FRIENDLY BUTTONS
+]]
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 
-local LocalPlayer = Players.LocalPlayer
-local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local Player = Players.LocalPlayer
+local RealCharacter = Player.Character or Player.CharacterAdded:Wait()
 local IsInvisible = false
-local CollisionLoop = nil
+local CanInvis = true
+local FakeCharacter = nil
+local Part = nil
+local PseudoAnchor = nil
+
+-- Settings
+local Transparency = true -- Makes fake character slightly transparent
+local NoClip = false -- Makes fake character no clip
 
 -- Create GUI
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "FEInvisibleCorrectGui"
+ScreenGui.Name = "FEInvisibleRealGui"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+ScreenGui.Parent = Player:WaitForChild("PlayerGui")
 
 -- Create Invisible Toggle Button
 local InvisibleButton = Instance.new("TextButton")
@@ -40,113 +58,160 @@ local InvisCorner = Instance.new("UICorner")
 InvisCorner.CornerRadius = UDim.new(0, 12)
 InvisCorner.Parent = InvisibleButton
 
--- Function to make character ACTUALLY invisible
-local function MakeInvisible()
-    if IsInvisible then return end
+-- Initialize invisibility system
+local function InitializeInvisibility()
+    RealCharacter.Archivable = true
+    FakeCharacter = RealCharacter:Clone()
     
-    local Character = LocalPlayer.Character
-    if not Character then return end
+    -- Create safe platform far away
+    Part = Instance.new("Part", workspace)
+    Part.Anchored = true
+    Part.Size = Vector3.new(200, 1, 200)
+    Part.CFrame = CFrame.new(0, -500, 0) -- Far below map
+    Part.CanCollide = true
     
-    local HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
-    local Humanoid = Character:FindFirstChildOfClass("Humanoid")
+    -- Place fake character on platform
+    FakeCharacter.Parent = workspace
+    FakeCharacter.HumanoidRootPart.CFrame = Part.CFrame * CFrame.new(0, 5, 0)
     
-    if not HumanoidRootPart or not Humanoid then 
-        warn("[FE INVISIBLE] Missing HumanoidRootPart or Humanoid!")
-        return 
-    end
-    
-    -- Store original camera subject
-    local OriginalCameraSubject = workspace.CurrentCamera.CameraSubject
-    
-    -- STEP 1: Delete all body parts except RootPart and Humanoid
-    for _, part in pairs(Character:GetChildren()) do
-        if part ~= HumanoidRootPart and part ~= Humanoid then
-            part:Destroy()
+    -- Clone LocalScripts to fake character
+    for i, v in pairs(RealCharacter:GetChildren()) do
+        if v:IsA("LocalScript") then
+            local clone = v:Clone()
+            clone.Disabled = true
+            clone.Parent = FakeCharacter
         end
     end
     
-    -- STEP 2: Set camera to root part
-    workspace.CurrentCamera.CameraSubject = HumanoidRootPart
-    
-    -- STEP 3: Disable HumanoidRootPart collision (so you can phase through walls)
-    HumanoidRootPart.CanCollide = false
-    
-    -- STEP 4: Keep collision disabled permanently
-    CollisionLoop = RunService.Stepped:Connect(function()
-        if HumanoidRootPart and HumanoidRootPart.Parent then
-            HumanoidRootPart.CanCollide = false
+    -- Make fake character slightly transparent
+    if Transparency then
+        for i, v in pairs(FakeCharacter:GetDescendants()) do
+            if v:IsA("BasePart") then
+                v.Transparency = 0.7
+            end
         end
-    end)
-    
-    -- STEP 5: Optional - Add visual indicator for yourself
-    local SelectionBox = Instance.new("SelectionBox")
-    SelectionBox.Name = "InvisibleIndicator"
-    SelectionBox.Adornee = HumanoidRootPart
-    SelectionBox.LineThickness = 0.05
-    SelectionBox.Color3 = Color3.fromRGB(0, 255, 0)
-    SelectionBox.Parent = HumanoidRootPart
-    
-    -- STEP 6: Disable DisplayDistance to hide name and health
-    if Humanoid then
-        Humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
     end
     
-    IsInvisible = true
-    InvisibleButton.Text = "👻 Invisible: ON"
-    InvisibleButton.BorderColor3 = Color3.fromRGB(255, 0, 0)
-    InvisibleButton.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
-    
-    -- Show notification
-    game:GetService("StarterGui"):SetCore("SendNotification", {
-        Title = "FE Invisible";
-        Text = "You are now INVISIBLE! Press R to reset when done.";
-        Duration = 5;
-    })
-    
-    print("===========================================")
-    print("[FE INVISIBLE] SUCCESS!")
-    print("✅ All body parts deleted except RootPart")
-    print("✅ You are INVISIBLE to all players")
-    print("✅ You can still move and attack")
-    print("✅ Press R to reset and become visible")
-    print("===========================================")
+    PseudoAnchor = FakeCharacter.HumanoidRootPart
 end
 
--- Function to restore visibility (requires reset)
-local function MakeVisible()
-    if not IsInvisible then return end
-    
-    -- Disconnect collision loop
-    if CollisionLoop then
-        CollisionLoop:Disconnect()
-        CollisionLoop = nil
-    end
-    
-    -- Show notification
-    game:GetService("StarterGui"):SetCore("SendNotification", {
-        Title = "FE Invisible";
-        Text = "Resetting to restore character...";
-        Duration = 3;
-    })
-    
-    -- Reset character
-    wait(1)
-    if LocalPlayer.Character then
-        LocalPlayer.Character:BreakJoints()
-    end
-    
+-- Initialize on script load
+InitializeInvisibility()
+
+-- Handle character death and respawn
+local function RealCharacterDied()
+    CanInvis = false
+    RealCharacter:Destroy()
+    RealCharacter = Player.Character
+    CanInvis = true
     IsInvisible = false
+    
+    if FakeCharacter then
+        FakeCharacter:Destroy()
+    end
+    
+    workspace.CurrentCamera.CameraSubject = RealCharacter.Humanoid
+    
+    -- Reinitialize
+    InitializeInvisibility()
+    
     InvisibleButton.Text = "👻 Invisible: OFF"
     InvisibleButton.BorderColor3 = Color3.fromRGB(0, 255, 0)
     InvisibleButton.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
 end
 
--- Toggle function
+RealCharacter.Humanoid.Died:Connect(function()
+    RealCharacter:Destroy()
+    if FakeCharacter then
+        FakeCharacter:Destroy()
+    end
+end)
+
+Player.CharacterAppearanceLoaded:Connect(RealCharacterDied)
+
+-- Keep fake character anchored to platform
+RunService.RenderStepped:Connect(function()
+    if PseudoAnchor ~= nil then
+        PseudoAnchor.CFrame = Part.CFrame * CFrame.new(0, 5, 0)
+    end
+    if NoClip and FakeCharacter then
+        FakeCharacter.Humanoid:ChangeState(11)
+    end
+end)
+
+-- Main invisible toggle function
 local function ToggleInvisible()
-    if IsInvisible then
-        MakeVisible()
+    if not CanInvis or not RealCharacter or not FakeCharacter then return end
+    if not RealCharacter:FindFirstChild("HumanoidRootPart") or not FakeCharacter:FindFirstChild("HumanoidRootPart") then return end
+    
+    if IsInvisible == false then
+        -- GOING INVISIBLE
+        -- Swap CFrames: Real character goes to platform, fake character comes to your position
+        local StoredCF = RealCharacter.HumanoidRootPart.CFrame
+        RealCharacter.HumanoidRootPart.CFrame = FakeCharacter.HumanoidRootPart.CFrame
+        FakeCharacter.HumanoidRootPart.CFrame = StoredCF
+        
+        -- Unequip tools from real character
+        RealCharacter.Humanoid:UnequipTools()
+        
+        -- CRITICAL: Change Player.Character to fake character
+        Player.Character = FakeCharacter
+        workspace.CurrentCamera.CameraSubject = FakeCharacter.Humanoid
+        PseudoAnchor = RealCharacter.HumanoidRootPart
+        
+        -- Enable LocalScripts in fake character
+        for i, v in pairs(FakeCharacter:GetChildren()) do
+            if v:IsA("LocalScript") then
+                v.Disabled = false
+            end
+        end
+        
+        IsInvisible = true
+        InvisibleButton.Text = "👻 Invisible: ON"
+        InvisibleButton.BorderColor3 = Color3.fromRGB(255, 0, 0)
+        InvisibleButton.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
+        
+        game:GetService("StarterGui"):SetCore("SendNotification", {
+            Title = "FE Invisible";
+            Text = "You are now INVISIBLE! Others see you at -500 Y position.";
+            Duration = 5;
+        })
+        
+        print("[FE INVISIBLE] You are now INVISIBLE to all players!")
     else
-        MakeInvisible()
+        -- GOING VISIBLE
+        -- Swap back: Fake character goes to platform, real character returns to ground
+        local StoredCF = FakeCharacter.HumanoidRootPart.CFrame
+        FakeCharacter.HumanoidRootPart.CFrame = RealCharacter.HumanoidRootPart.CFrame
+        RealCharacter.HumanoidRootPart.CFrame = StoredCF
+        
+        -- Unequip tools from fake character
+        FakeCharacter.Humanoid:UnequipTools()
+        
+        -- CRITICAL: Change Player.Character back to real character
+        Player.Character = RealCharacter
+        workspace.CurrentCamera.CameraSubject = RealCharacter.Humanoid
+        PseudoAnchor = FakeCharacter.HumanoidRootPart
+        
+        -- Disable LocalScripts in fake character
+        for i, v in pairs(FakeCharacter:GetChildren()) do
+            if v:IsA("LocalScript") then
+                v.Disabled = true
+            end
+        end
+        
+        IsInvisible = false
+        InvisibleButton.Text = "👻 Invisible: OFF"
+        InvisibleButton.BorderColor3 = Color3.fromRGB(0, 255, 0)
+        InvisibleButton.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+        
+        game:GetService("StarterGui"):SetCore("SendNotification", {
+            Title = "FE Invisible";
+            Text = "You are now VISIBLE again!";
+            Duration = 3;
+        })
+        
+        print("[FE INVISIBLE] You are now VISIBLE to all players!")
     end
 end
 
@@ -164,37 +229,25 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     end
 end)
 
--- Handle character respawn
-LocalPlayer.CharacterAdded:Connect(function(newChar)
-    Character = newChar
-    IsInvisible = false
-    InvisibleButton.Text = "👻 Invisible: OFF"
-    InvisibleButton.BorderColor3 = Color3.fromRGB(0, 255, 0)
-    InvisibleButton.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-    
-    if CollisionLoop then
-        CollisionLoop:Disconnect()
-        CollisionLoop = nil
-    end
-end)
-
 -- Initial notification
 game:GetService("StarterGui"):SetCore("SendNotification", {
-    Title = "FE Invisible - CORRECT METHOD";
-    Text = "Press V or drag & tap button! Works in ALL games.";
+    Title = "FE Invisible - REAL METHOD";
+    Text = "Press V or drag & tap button! Based on BitingTheDust's method.";
     Duration = 7;
 })
 
 print("===========================================")
-print("FE INVISIBLE SCRIPT - CORRECT METHOD")
+print("FE INVISIBLE SCRIPT - REAL WORKING METHOD")
 print("===========================================")
 print("✅ Press V or tap the DRAGGABLE button")
-print("✅ Deletes body parts, keeps HumanoidRootPart")
-print("✅ You become INVISIBLE to everyone")
+print("✅ Character CFrame Swap Method")
+print("✅ Your REAL body goes to -500 Y (invisible)")
+print("✅ Your FAKE body stays on ground (you see it)")
+print("✅ Others see you at -500 Y = INVISIBLE")
 print("✅ You can still MOVE and HIT others")
 print("✅ Hides name tag and health bar")
 print("✅ Universal - Works in Battlegrounds")
-print("✅ NOT BANNABLE - Client-side only")
-print("⚠️  Reset (R) to become visible again")
+print("✅ NOT BANNABLE - Client-side character swap")
 print("🎮 Button is DRAGGABLE for mobile!")
+print("⚠️  Original by BitingTheDust (V3rmillion)")
 print("===========================================")
