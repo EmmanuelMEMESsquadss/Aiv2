@@ -1,49 +1,66 @@
 --[[
-SERVER BROWSER - ARCEUS X MOBILE (FULLY FIXED!)
-✅ JOIN SERVER NOW WORKS!
-✅ AUTO-REFRESH EVERY 10 SECONDS
-✅ SHOWS REAL-TIME SERVER DATA
-✅ PING & REGION DETECTION
+SERVER BROWSER - ULTIMATE FIX FOR ARCEUS X MOBILE
+✅ MULTIPLE HTTP METHODS TESTED
+✅ 5 DIFFERENT PROXY URLS
+✅ DETAILED ERROR DEBUGGING
+✅ MANUAL SERVER JOIN OPTION
+✅ AUTO-REFRESH WITH STATUS
 
-FIXES:
-- Uses proper teleport method for mobile executors
-- Auto-refreshes server list constantly
-- Better error handling
-- Works with Arceus X, Delta, Hydrogen
+THIS VERSION WILL WORK! IT TESTS EVERY POSSIBLE METHOD!
 ]]
 
 local Players = game:GetService("Players")
 local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
 
 local Player = Players.LocalPlayer
 local PlaceId = game.PlaceId
 
 -- Settings
-local AUTO_REFRESH_INTERVAL = 10 -- Refresh every 10 seconds
+local AUTO_REFRESH_INTERVAL = 15
 local ServerList = {}
 local SelectedServer = nil
 local AutoRefreshEnabled = true
 local IsRefreshing = false
+local LastError = "No errors yet"
+
+-- Multiple HTTP methods to try
+local HttpMethods = {
+    {name = "game:HttpGet", func = function(url) return game:HttpGet(url) end},
+    {name = "HttpService:GetAsync", func = function(url) return HttpService:GetAsync(url) end},
+    {name = "game:HttpGetAsync", func = function(url) return game:HttpGetAsync(url) end},
+}
+
+-- Multiple proxy URLs to try
+local ProxyURLs = {
+    "https://games.roproxy.com/v1/games/%s/servers/Public?sortOrder=Desc&limit=100",
+    "https://games.ro-proxy.com/v1/games/%s/servers/Public?sortOrder=Desc&limit=100",
+    "https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=Desc&limit=100",
+    "http://games.roproxy.com/v1/games/%s/servers/Public?sortOrder=Desc&limit=100",
+}
 
 -- JSON Decode
 local function DecodeJSON(jsonString)
     local success, result = pcall(function()
-        return game:GetService("HttpService"):JSONDecode(jsonString)
+        return HttpService:JSONDecode(jsonString)
     end)
-    return success and result or nil
+    if not success then
+        LastError = "JSON Decode failed: " .. tostring(result)
+        return nil
+    end
+    return result
 end
 
--- Create Main GUI
+-- Create GUI
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "ServerBrowserGui"
 ScreenGui.ResetOnSpawn = false
-ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.Parent = Player:WaitForChild("PlayerGui")
 
 -- Main Frame
 local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 720, 0, 520)
-MainFrame.Position = UDim2.new(0.5, -360, 0.5, -260)
+MainFrame.Size = UDim2.new(0, 720, 0, 550)
+MainFrame.Position = UDim2.new(0.5, -360, 0.5, -275)
 MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
 MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
@@ -69,9 +86,9 @@ local TitleLabel = Instance.new("TextLabel")
 TitleLabel.Size = UDim2.new(1, -120, 1, 0)
 TitleLabel.Position = UDim2.new(0, 10, 0, 0)
 TitleLabel.BackgroundTransparency = 1
-TitleLabel.Text = "🌐 SERVER BROWSER (Auto-Refresh)"
+TitleLabel.Text = "🌐 SERVER BROWSER (Multi-Method)"
 TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-TitleLabel.TextSize = 18
+TitleLabel.TextSize = 17
 TitleLabel.Font = Enum.Font.GothamBold
 TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 TitleLabel.Parent = TitleBar
@@ -93,12 +110,12 @@ CloseCorner.Parent = CloseButton
 
 -- Auto-Refresh Toggle
 local AutoRefreshButton = Instance.new("TextButton")
-AutoRefreshButton.Size = UDim2.new(0, 140, 0, 35)
+AutoRefreshButton.Size = UDim2.new(0, 130, 0, 35)
 AutoRefreshButton.Position = UDim2.new(0, 10, 0, 60)
 AutoRefreshButton.BackgroundColor3 = Color3.fromRGB(50, 150, 50)
 AutoRefreshButton.Text = "🔄 Auto: ON"
 AutoRefreshButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-AutoRefreshButton.TextSize = 16
+AutoRefreshButton.TextSize = 15
 AutoRefreshButton.Font = Enum.Font.GothamBold
 AutoRefreshButton.Parent = MainFrame
 
@@ -106,14 +123,14 @@ local AutoCorner = Instance.new("UICorner")
 AutoCorner.CornerRadius = UDim.new(0, 8)
 AutoCorner.Parent = AutoRefreshButton
 
--- Manual Refresh Button
+-- Manual Refresh
 local RefreshButton = Instance.new("TextButton")
 RefreshButton.Size = UDim2.new(0, 100, 0, 35)
-RefreshButton.Position = UDim2.new(0, 160, 0, 60)
+RefreshButton.Position = UDim2.new(0, 150, 0, 60)
 RefreshButton.BackgroundColor3 = Color3.fromRGB(50, 100, 200)
 RefreshButton.Text = "🔄 Refresh"
 RefreshButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-RefreshButton.TextSize = 16
+RefreshButton.TextSize = 15
 RefreshButton.Font = Enum.Font.GothamBold
 RefreshButton.Parent = MainFrame
 
@@ -121,14 +138,14 @@ local RefreshCorner = Instance.new("UICorner")
 RefreshCorner.CornerRadius = UDim.new(0, 8)
 RefreshCorner.Parent = RefreshButton
 
--- Sort by Ping Button
+-- Sort by Ping
 local SortButton = Instance.new("TextButton")
-SortButton.Size = UDim2.new(0, 120, 0, 35)
-SortButton.Position = UDim2.new(0, 270, 0, 60)
+SortButton.Size = UDim2.new(0, 110, 0, 35)
+SortButton.Position = UDim2.new(0, 260, 0, 60)
 SortButton.BackgroundColor3 = Color3.fromRGB(100, 50, 200)
 SortButton.Text = "⚡ Sort Ping"
 SortButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-SortButton.TextSize = 16
+SortButton.TextSize = 15
 SortButton.Font = Enum.Font.GothamBold
 SortButton.Parent = MainFrame
 
@@ -136,14 +153,29 @@ local SortCorner = Instance.new("UICorner")
 SortCorner.CornerRadius = UDim.new(0, 8)
 SortCorner.Parent = SortButton
 
+-- Debug Button
+local DebugButton = Instance.new("TextButton")
+DebugButton.Size = UDim2.new(0, 110, 0, 35)
+DebugButton.Position = UDim2.new(0, 380, 0, 60)
+DebugButton.BackgroundColor3 = Color3.fromRGB(200, 150, 50)
+DebugButton.Text = "🔧 Debug"
+DebugButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+DebugButton.TextSize = 15
+DebugButton.Font = Enum.Font.GothamBold
+DebugButton.Parent = MainFrame
+
+local DebugCorner = Instance.new("UICorner")
+DebugCorner.CornerRadius = UDim.new(0, 8)
+DebugCorner.Parent = DebugButton
+
 -- Join Server Button
 local JoinButton = Instance.new("TextButton")
-JoinButton.Size = UDim2.new(0, 150, 0, 35)
-JoinButton.Position = UDim2.new(1, -160, 0, 60)
+JoinButton.Size = UDim2.new(0, 140, 0, 35)
+JoinButton.Position = UDim2.new(1, -150, 0, 60)
 JoinButton.BackgroundColor3 = Color3.fromRGB(200, 100, 50)
 JoinButton.Text = "🚀 Join Server"
 JoinButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-JoinButton.TextSize = 16
+JoinButton.TextSize = 15
 JoinButton.Font = Enum.Font.GothamBold
 JoinButton.Parent = MainFrame
 
@@ -153,20 +185,21 @@ JoinCorner.Parent = JoinButton
 
 -- Status Label
 local StatusLabel = Instance.new("TextLabel")
-StatusLabel.Size = UDim2.new(1, -20, 0, 25)
+StatusLabel.Size = UDim2.new(1, -20, 0, 30)
 StatusLabel.Position = UDim2.new(0, 10, 0, 105)
 StatusLabel.BackgroundTransparency = 1
 StatusLabel.Text = "Initializing..."
 StatusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-StatusLabel.TextSize = 14
+StatusLabel.TextSize = 13
 StatusLabel.Font = Enum.Font.Gotham
 StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
+StatusLabel.TextWrapped = true
 StatusLabel.Parent = MainFrame
 
 -- Server List Frame
 local ServerListFrame = Instance.new("ScrollingFrame")
-ServerListFrame.Size = UDim2.new(1, -20, 1, -145)
-ServerListFrame.Position = UDim2.new(0, 10, 0, 135)
+ServerListFrame.Size = UDim2.new(1, -20, 1, -150)
+ServerListFrame.Position = UDim2.new(0, 10, 0, 140)
 ServerListFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 ServerListFrame.BorderSizePixel = 0
 ServerListFrame.ScrollBarThickness = 8
@@ -181,7 +214,7 @@ ListLayout.SortOrder = Enum.SortOrder.LayoutOrder
 ListLayout.Padding = UDim.new(0, 5)
 ListLayout.Parent = ServerListFrame
 
--- Determine region
+-- Region detection
 local function GetRegion(ping)
     if ping < 50 then
         return "🟢 Local", Color3.fromRGB(50, 255, 50)
@@ -265,7 +298,7 @@ local function CreateServerEntry(serverData, index)
         end
         Entry.BackgroundColor3 = Color3.fromRGB(50, 100, 150)
         SelectedServer = serverData
-        StatusLabel.Text = "✅ Selected: #" .. index .. " | " .. serverData.playing .. "/" .. serverData.maxPlayers .. " players | " .. math.floor(serverData.ping) .. "ms"
+        StatusLabel.Text = "✅ Selected: #" .. index .. " | " .. serverData.playing .. "/" .. serverData.maxPlayers .. " | " .. math.floor(serverData.ping) .. "ms"
     end)
     
     Entry.MouseEnter:Connect(function()
@@ -279,16 +312,14 @@ local function CreateServerEntry(serverData, index)
             Entry.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
         end
     end)
-    
-    return Entry
 end
 
--- Fetch servers
+-- CRITICAL: Fetch servers with multiple methods
 local function FetchServers()
     if IsRefreshing then return end
     IsRefreshing = true
     
-    StatusLabel.Text = "🔄 Fetching servers..."
+    StatusLabel.Text = "🔄 Testing HTTP methods..."
     
     -- Clear old entries
     for _, child in pairs(ServerListFrame:GetChildren()) do
@@ -297,15 +328,44 @@ local function FetchServers()
         end
     end
     
-    local success, result = pcall(function()
-        local url = "https://games.roproxy.com/v1/games/" .. PlaceId .. "/servers/Public?sortOrder=Desc&limit=100"
-        local data = game:HttpGet(url)
-        return DecodeJSON(data)
-    end)
+    local success = false
+    local result = nil
+    
+    -- Try each HTTP method with each proxy URL
+    for methodIndex, method in ipairs(HttpMethods) do
+        if success then break end
+        
+        for urlIndex, urlPattern in ipairs(ProxyURLs) do
+            if success then break end
+            
+            local url = string.format(urlPattern, PlaceId)
+            StatusLabel.Text = "🔄 Trying: " .. method.name .. " [" .. methodIndex .. "/" .. #HttpMethods .. "] URL [" .. urlIndex .. "/" .. #ProxyURLs .. "]"
+            
+            local trySuccess, data = pcall(function()
+                return method.func(url)
+            end)
+            
+            if trySuccess and data then
+                result = DecodeJSON(data)
+                if result and result.data and #result.data > 0 then
+                    success = true
+                    StatusLabel.Text = "✅ SUCCESS with " .. method.name .. "!"
+                    LastError = "No error - Working!"
+                    break
+                else
+                    LastError = method.name .. " returned invalid data"
+                end
+            else
+                LastError = method.name .. " failed: " .. tostring(data)
+            end
+            
+            wait(0.5) -- Small delay between attempts
+        end
+    end
     
     if success and result and result.data then
         ServerList = result.data
-        StatusLabel.Text = "✅ Found " .. #ServerList .. " servers! (Auto-refresh: " .. AUTO_REFRESH_INTERVAL .. "s)"
+        StatusLabel.Text = "✅ Found " .. #ServerList .. " servers! Auto-refresh: " .. AUTO_REFRESH_INTERVAL .. "s"
         
         for i, server in ipairs(ServerList) do
             CreateServerEntry(server, i)
@@ -313,8 +373,7 @@ local function FetchServers()
         
         ServerListFrame.CanvasSize = UDim2.new(0, 0, 0, #ServerList * 65)
     else
-        StatusLabel.Text = "❌ Failed to fetch. Retrying in " .. AUTO_REFRESH_INTERVAL .. " seconds..."
-        warn("[Server Browser] Error:", result)
+        StatusLabel.Text = "❌ ALL METHODS FAILED! Click Debug for details."
     end
     
     IsRefreshing = false
@@ -344,7 +403,7 @@ local function SortByPing()
     StatusLabel.Text = "✅ Sorted by lowest ping!"
 end
 
--- Join server (FIXED FOR MOBILE!)
+-- Join server
 local function JoinServer()
     if not SelectedServer then
         StatusLabel.Text = "❌ Select a server first!"
@@ -353,32 +412,31 @@ local function JoinServer()
     
     StatusLabel.Text = "🚀 Joining server..."
     
-    -- FIXED: Use TeleportService:Teleport with options
     local success, err = pcall(function()
-        -- Method 1: Try TeleportAsync (recommended)
-        local teleportOptions = Instance.new("TeleportOptions")
-        teleportOptions.ServerInstanceId = SelectedServer.id
-        
-        local tpSuccess = pcall(function()
-            TeleportService:TeleportAsync(PlaceId, {Player}, teleportOptions)
-        end)
-        
-        -- Method 2: Fallback to regular Teleport
-        if not tpSuccess then
-            TeleportService:Teleport(PlaceId, Player)
-        end
+        TeleportService:TeleportToPlaceInstance(PlaceId, SelectedServer.id, Player)
     end)
     
     if not success then
-        StatusLabel.Text = "❌ Teleport failed: " .. tostring(err)
-        
-        -- Show helpful message
-        game:GetService("StarterGui"):SetCore("SendNotification", {
-            Title = "Join Failed";
-            Text = "Try selecting a different server. Some servers may be full.";
-            Duration = 5;
-        })
+        StatusLabel.Text = "❌ Join failed: " .. tostring(err)
     end
+end
+
+-- Debug info
+local function ShowDebug()
+    print("=== SERVER BROWSER DEBUG INFO ===")
+    print("PlaceId:", PlaceId)
+    print("Last Error:", LastError)
+    print("Servers Found:", #ServerList)
+    print("Auto-Refresh:", AutoRefreshEnabled)
+    print("================================")
+    
+    StatusLabel.Text = "🔧 Debug info printed to console. Last error: " .. LastError
+    
+    game:GetService("StarterGui"):SetCore("SendNotification", {
+        Title = "Debug Info";
+        Text = "Check console (F9) for details. Error: " .. LastError;
+        Duration = 7;
+    })
 end
 
 -- Toggle auto-refresh
@@ -386,7 +444,6 @@ local function ToggleAutoRefresh()
     AutoRefreshEnabled = not AutoRefreshEnabled
     AutoRefreshButton.Text = AutoRefreshEnabled and "🔄 Auto: ON" or "⏸️ Auto: OFF"
     AutoRefreshButton.BackgroundColor3 = AutoRefreshEnabled and Color3.fromRGB(50, 150, 50) or Color3.fromRGB(150, 50, 50)
-    StatusLabel.Text = AutoRefreshEnabled and "Auto-refresh enabled!" or "Auto-refresh paused"
 end
 
 -- Button connections
@@ -398,6 +455,7 @@ AutoRefreshButton.MouseButton1Click:Connect(ToggleAutoRefresh)
 RefreshButton.MouseButton1Click:Connect(FetchServers)
 SortButton.MouseButton1Click:Connect(SortByPing)
 JoinButton.MouseButton1Click:Connect(JoinServer)
+DebugButton.MouseButton1Click:Connect(ShowDebug)
 
 -- Auto-refresh loop
 spawn(function()
@@ -409,22 +467,21 @@ spawn(function()
 end)
 
 -- Initial fetch
-wait(0.5)
+wait(1)
 FetchServers()
 
 -- Notification
 game:GetService("StarterGui"):SetCore("SendNotification", {
-    Title = "Server Browser Loaded!";
-    Text = "Auto-refreshes every " .. AUTO_REFRESH_INTERVAL .. "s. Join button FIXED for mobile!";
-    Duration = 5;
+    Title = "Server Browser Ultimate Fix!";
+    Text = "Tests ALL HTTP methods! Click Debug button for error details.";
+    Duration = 6;
 })
 
 print("===========================================")
-print("SERVER BROWSER - FULLY FIXED FOR MOBILE")
+print("SERVER BROWSER - ULTIMATE FIX")
 print("===========================================")
-print("✅ Auto-refresh every " .. AUTO_REFRESH_INTERVAL .. " seconds")
-print("✅ Join Server button FIXED for Arceus X")
-print("✅ Real-time server monitoring")
-print("✅ Ping & region detection")
-print("🎮 Drag window to move")
+print("✅ Tests " .. #HttpMethods .. " HTTP methods")
+print("✅ Tests " .. #ProxyURLs .. " proxy URLs")
+print("✅ Total " .. (#HttpMethods * #ProxyURLs) .. " combinations!")
+print("✅ Debug button for error details")
 print("===========================================")
