@@ -1,31 +1,33 @@
 --[[
-SERVER BROWSER - ULTRA UNIVERSAL (FIXED!)
-✅ CONVERTS PLACE ID → UNIVERSE ID AUTOMATICALLY
-✅ WORKS ON ALL GAMES (ROOT PLACE + SUB-PLACES)
-✅ COREGUI PROTECTION FOR ANTI-CHEAT GAMES
-✅ MULTIPLE FALLBACK METHODS
-✅ AUTO-REFRESH
+SERVER BROWSER - MULTI-GAME UNIVERSAL!
+✅ TRIES BOTH V1 AND V2 API
+✅ TRIES MULTIPLE PROXY DOMAINS
+✅ WORKS ON MORE GAMES!
+✅ NO AUTO-REFRESH (MANUAL ONLY)
+✅ TESTS ALL COMBINATIONS
 
-THE FIX: Some games have multiple places. We need to get the
-Universe ID first, then query servers with that!
+Some games use /v1/games, others use /v2/games!
+This script tries BOTH until it finds what works!
 ]]
 
 local Players = game:GetService("Players")
 local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
-local CoreGui = game:GetService("CoreGui")
 
 local Player = Players.LocalPlayer
 local PlaceId = game.PlaceId
-local UniverseId = nil -- Will be fetched
 
--- Settings
-local AUTO_REFRESH_INTERVAL = 15
 local ServerList = {}
 local SelectedServer = nil
-local AutoRefreshEnabled = true
 local IsRefreshing = false
-local LastError = ""
+local WorkingMethod = nil -- Store which method worked
+
+-- ALL possible combinations
+local APIVersions = {"v1", "v2"}
+local ProxyDomains = {
+    "games.roproxy.com",
+    "games.ro-proxy.com",
+}
 
 -- JSON Decode
 local function DecodeJSON(jsonString)
@@ -35,59 +37,17 @@ local function DecodeJSON(jsonString)
     return success and result or nil
 end
 
--- Get Universe ID from Place ID (CRITICAL!)
-local function GetUniverseId()
-    -- Method 1: Try new API
-    local methods = {
-        function()
-            local url = "https://apis.roproxy.com/universes/v1/places/" .. PlaceId .. "/universe"
-            local data = game:HttpGet(url)
-            local result = DecodeJSON(data)
-            return result and result.universeId
-        end,
-        function()
-            local url = "https://games.roproxy.com/v1/games/multiget-place-details?placeIds=" .. PlaceId
-            local data = game:HttpGet(url)
-            local result = DecodeJSON(data)
-            return result and result[1] and result[1].universeId
-        end,
-        function()
-            -- Fallback: Try using PlaceId directly (for root places)
-            return PlaceId
-        end
-    }
-    
-    for i, method in ipairs(methods) do
-        local success, result = pcall(method)
-        if success and result then
-            print("[Server Browser] Got Universe ID:", result, "using method", i)
-            return result
-        end
-    end
-    
-    return PlaceId -- Last resort fallback
-end
-
--- Create GUI (with CoreGui protection)
+-- Create GUI
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "ServerBrowserGui"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-ScreenGui.IgnoreGuiInset = true
-
--- Try to parent to CoreGui for better protection
-local parentSuccess = pcall(function()
-    ScreenGui.Parent = CoreGui
-end)
-
-if not parentSuccess then
-    ScreenGui.Parent = Player:WaitForChild("PlayerGui")
-end
+ScreenGui.Parent = Player:WaitForChild("PlayerGui")
 
 -- Main Frame
 local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 720, 0, 550)
-MainFrame.Position = UDim2.new(0.5, -360, 0.5, -275)
+MainFrame.Size = UDim2.new(0, 720, 0, 520)
+MainFrame.Position = UDim2.new(0.5, -360, 0.5, -260)
 MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
 MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
@@ -113,9 +73,9 @@ local TitleLabel = Instance.new("TextLabel")
 TitleLabel.Size = UDim2.new(1, -120, 1, 0)
 TitleLabel.Position = UDim2.new(0, 10, 0, 0)
 TitleLabel.BackgroundTransparency = 1
-TitleLabel.Text = "🌐 SERVER BROWSER (UNIVERSAL)"
+TitleLabel.Text = "🌐 SERVER BROWSER (Universal)"
 TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-TitleLabel.TextSize = 17
+TitleLabel.TextSize = 18
 TitleLabel.Font = Enum.Font.GothamBold
 TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 TitleLabel.Parent = TitleBar
@@ -129,39 +89,21 @@ CloseButton.Text = "✕"
 CloseButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 CloseButton.TextSize = 20
 CloseButton.Font = Enum.Font.GothamBold
-CloseButton.ZIndex = 10
 CloseButton.Parent = TitleBar
 
 local CloseCorner = Instance.new("UICorner")
 CloseCorner.CornerRadius = UDim.new(0, 8)
 CloseCorner.Parent = CloseButton
 
--- Auto-Refresh Toggle
-local AutoRefreshButton = Instance.new("TextButton")
-AutoRefreshButton.Size = UDim2.new(0, 130, 0, 35)
-AutoRefreshButton.Position = UDim2.new(0, 10, 0, 60)
-AutoRefreshButton.BackgroundColor3 = Color3.fromRGB(50, 150, 50)
-AutoRefreshButton.Text = "🔄 Auto: ON"
-AutoRefreshButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-AutoRefreshButton.TextSize = 15
-AutoRefreshButton.Font = Enum.Font.GothamBold
-AutoRefreshButton.ZIndex = 10
-AutoRefreshButton.Parent = MainFrame
-
-local AutoCorner = Instance.new("UICorner")
-AutoCorner.CornerRadius = UDim.new(0, 8)
-AutoCorner.Parent = AutoRefreshButton
-
--- Manual Refresh
+-- Refresh Button (MANUAL ONLY!)
 local RefreshButton = Instance.new("TextButton")
-RefreshButton.Size = UDim2.new(0, 100, 0, 35)
-RefreshButton.Position = UDim2.new(0, 150, 0, 60)
-RefreshButton.BackgroundColor3 = Color3.fromRGB(50, 100, 200)
-RefreshButton.Text = "🔄 Refresh"
+RefreshButton.Size = UDim2.new(0, 130, 0, 35)
+RefreshButton.Position = UDim2.new(0, 10, 0, 60)
+RefreshButton.BackgroundColor3 = Color3.fromRGB(50, 150, 200)
+RefreshButton.Text = "🔄 Refresh Servers"
 RefreshButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-RefreshButton.TextSize = 15
+RefreshButton.TextSize = 16
 RefreshButton.Font = Enum.Font.GothamBold
-RefreshButton.ZIndex = 10
 RefreshButton.Parent = MainFrame
 
 local RefreshCorner = Instance.new("UICorner")
@@ -170,46 +112,28 @@ RefreshCorner.Parent = RefreshButton
 
 -- Sort by Ping
 local SortButton = Instance.new("TextButton")
-SortButton.Size = UDim2.new(0, 110, 0, 35)
-SortButton.Position = UDim2.new(0, 260, 0, 60)
+SortButton.Size = UDim2.new(0, 120, 0, 35)
+SortButton.Position = UDim2.new(0, 150, 0, 60)
 SortButton.BackgroundColor3 = Color3.fromRGB(100, 50, 200)
 SortButton.Text = "⚡ Sort Ping"
 SortButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-SortButton.TextSize = 15
+SortButton.TextSize = 16
 SortButton.Font = Enum.Font.GothamBold
-SortButton.ZIndex = 10
 SortButton.Parent = MainFrame
 
 local SortCorner = Instance.new("UICorner")
 SortCorner.CornerRadius = UDim.new(0, 8)
 SortCorner.Parent = SortButton
 
--- Debug Button
-local DebugButton = Instance.new("TextButton")
-DebugButton.Size = UDim2.new(0, 110, 0, 35)
-DebugButton.Position = UDim2.new(0, 380, 0, 60)
-DebugButton.BackgroundColor3 = Color3.fromRGB(200, 150, 50)
-DebugButton.Text = "🔧 Debug"
-DebugButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-DebugButton.TextSize = 15
-DebugButton.Font = Enum.Font.GothamBold
-DebugButton.ZIndex = 10
-DebugButton.Parent = MainFrame
-
-local DebugCorner = Instance.new("UICorner")
-DebugCorner.CornerRadius = UDim.new(0, 8)
-DebugCorner.Parent = DebugButton
-
 -- Join Server Button
 local JoinButton = Instance.new("TextButton")
-JoinButton.Size = UDim2.new(0, 140, 0, 35)
-JoinButton.Position = UDim2.new(1, -150, 0, 60)
+JoinButton.Size = UDim2.new(0, 150, 0, 35)
+JoinButton.Position = UDim2.new(1, -160, 0, 60)
 JoinButton.BackgroundColor3 = Color3.fromRGB(200, 100, 50)
 JoinButton.Text = "🚀 Join Server"
 JoinButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-JoinButton.TextSize = 15
+JoinButton.TextSize = 16
 JoinButton.Font = Enum.Font.GothamBold
-JoinButton.ZIndex = 10
 JoinButton.Parent = MainFrame
 
 local JoinCorner = Instance.new("UICorner")
@@ -218,21 +142,20 @@ JoinCorner.Parent = JoinButton
 
 -- Status Label
 local StatusLabel = Instance.new("TextLabel")
-StatusLabel.Size = UDim2.new(1, -20, 0, 30)
+StatusLabel.Size = UDim2.new(1, -20, 0, 25)
 StatusLabel.Position = UDim2.new(0, 10, 0, 105)
 StatusLabel.BackgroundTransparency = 1
-StatusLabel.Text = "Initializing..."
+StatusLabel.Text = "Click Refresh to load servers"
 StatusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-StatusLabel.TextSize = 13
+StatusLabel.TextSize = 14
 StatusLabel.Font = Enum.Font.Gotham
 StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
-StatusLabel.TextWrapped = true
 StatusLabel.Parent = MainFrame
 
 -- Server List Frame
 local ServerListFrame = Instance.new("ScrollingFrame")
-ServerListFrame.Size = UDim2.new(1, -20, 1, -150)
-ServerListFrame.Position = UDim2.new(0, 10, 0, 140)
+ServerListFrame.Size = UDim2.new(1, -20, 1, -145)
+ServerListFrame.Position = UDim2.new(0, 10, 0, 135)
 ServerListFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 ServerListFrame.BorderSizePixel = 0
 ServerListFrame.ScrollBarThickness = 8
@@ -331,7 +254,7 @@ local function CreateServerEntry(serverData, index)
         end
         Entry.BackgroundColor3 = Color3.fromRGB(50, 100, 150)
         SelectedServer = serverData
-        StatusLabel.Text = "✅ Selected: #" .. index .. " | " .. serverData.playing .. "/" .. serverData.maxPlayers .. " | " .. math.floor(serverData.ping) .. "ms"
+        StatusLabel.Text = "✅ Selected #" .. index .. " - " .. serverData.playing .. "/" .. serverData.maxPlayers .. " - " .. math.floor(serverData.ping) .. "ms"
     end)
     
     Entry.MouseEnter:Connect(function()
@@ -347,50 +270,87 @@ local function CreateServerEntry(serverData, index)
     end)
 end
 
--- Fetch servers using Universe ID
+-- SMART FETCH: Try all combinations until one works!
 local function FetchServers()
     if IsRefreshing then return end
     IsRefreshing = true
     
-    StatusLabel.Text = "🔄 Getting Universe ID..."
+    StatusLabel.Text = "🔄 Testing API methods..."
     
-    -- Get Universe ID if we don't have it
-    if not UniverseId then
-        UniverseId = GetUniverseId()
-        StatusLabel.Text = "📍 Universe ID: " .. tostring(UniverseId) .. " - Fetching servers..."
-    else
-        StatusLabel.Text = "🔄 Fetching servers..."
-    end
-    
-    -- Clear old entries
     for _, child in pairs(ServerListFrame:GetChildren()) do
         if child:IsA("TextButton") then
             child:Destroy()
         end
     end
     
-    -- Try fetching with Universe ID
-    local success, result = pcall(function()
-        local url = "https://games.roproxy.com/v1/games/" .. UniverseId .. "/servers/Public?sortOrder=Desc&limit=100"
-        local data = game:HttpGet(url)
-        return DecodeJSON(data)
-    end)
-    
-    if success and result and result.data and #result.data > 0 then
-        ServerList = result.data
-        StatusLabel.Text = "✅ Found " .. #ServerList .. " servers! (Universe ID: " .. UniverseId .. ")"
+    -- Try the working method first if we have one
+    if WorkingMethod then
+        StatusLabel.Text = "🔄 Using cached method: " .. WorkingMethod.version .. " on " .. WorkingMethod.domain
         
-        for i, server in ipairs(ServerList) do
-            CreateServerEntry(server, i)
+        local url = "https://" .. WorkingMethod.domain .. "/" .. WorkingMethod.version .. "/games/" .. PlaceId .. "/servers/Public?sortOrder=Desc&limit=100"
+        local success, data = pcall(function()
+            return game:HttpGet(url)
+        end)
+        
+        if success and data then
+            local result = DecodeJSON(data)
+            if result and result.data and #result.data > 0 then
+                ServerList = result.data
+                StatusLabel.Text = "✅ Found " .. #ServerList .. " servers! (Using " .. WorkingMethod.version .. ")"
+                
+                for i, server in ipairs(ServerList) do
+                    CreateServerEntry(server, i)
+                end
+                
+                ServerListFrame.CanvasSize = UDim2.new(0, 0, 0, #ServerList * 65)
+                IsRefreshing = false
+                return
+            end
         end
         
-        ServerListFrame.CanvasSize = UDim2.new(0, 0, 0, #ServerList * 65)
-        LastError = "Working!"
-    else
-        StatusLabel.Text = "❌ Failed to fetch. Click Debug for details."
-        LastError = "Failed to fetch with Universe ID " .. tostring(UniverseId)
+        -- Working method failed, reset it
+        WorkingMethod = nil
     end
     
+    -- Try all combinations
+    for _, version in ipairs(APIVersions) do
+        for _, domain in ipairs(ProxyDomains) do
+            StatusLabel.Text = "🔄 Trying " .. version .. " API on " .. domain .. "..."
+            
+            local url = "https://" .. domain .. "/" .. version .. "/games/" .. PlaceId .. "/servers/Public?sortOrder=Desc&limit=100"
+            
+            local success, data = pcall(function()
+                return game:HttpGet(url)
+            end)
+            
+            if success and data then
+                local result = DecodeJSON(data)
+                if result and result.data and #result.data > 0 then
+                    ServerList = result.data
+                    
+                    -- Cache the working method!
+                    WorkingMethod = {version = version, domain = domain}
+                    
+                    StatusLabel.Text = "✅ Found " .. #ServerList .. " servers! (Using " .. version .. " on " .. domain .. ")"
+                    
+                    for i, server in ipairs(ServerList) do
+                        CreateServerEntry(server, i)
+                    end
+                    
+                    ServerListFrame.CanvasSize = UDim2.new(0, 0, 0, #ServerList * 65)
+                    IsRefreshing = false
+                    
+                    print("[Server Browser] SUCCESS with " .. version .. " API on " .. domain)
+                    return
+                end
+            end
+            
+            wait(0.3) -- Small delay between attempts
+        end
+    end
+    
+    -- If we got here, nothing worked
+    StatusLabel.Text = "❌ Failed all methods. Game might not have public servers or API is down."
     IsRefreshing = false
 end
 
@@ -415,7 +375,7 @@ local function SortByPing()
         CreateServerEntry(server, i)
     end
     
-    StatusLabel.Text = "✅ Sorted by lowest ping!"
+    StatusLabel.Text = "✅ Sorted by lowest ping! " .. #ServerList .. " servers."
 end
 
 -- Join server
@@ -436,73 +396,29 @@ local function JoinServer()
     end
 end
 
--- Debug info
-local function ShowDebug()
-    print("=== SERVER BROWSER DEBUG ===")
-    print("Place ID:", PlaceId)
-    print("Universe ID:", UniverseId)
-    print("Servers Found:", #ServerList)
-    print("Last Error:", LastError)
-    print("GUI Parent:", ScreenGui.Parent.Name)
-    print("==========================")
-    
-    StatusLabel.Text = "🔧 PlaceID: " .. PlaceId .. " | UniverseID: " .. tostring(UniverseId) .. " | Servers: " .. #ServerList
-    
-    game:GetService("StarterGui"):SetCore("SendNotification", {
-        Title = "Debug";
-        Text = "PlaceID: " .. PlaceId .. " | UnivID: " .. tostring(UniverseId);
-        Duration = 10;
-    })
-end
-
--- Toggle auto-refresh
-local function ToggleAutoRefresh()
-    AutoRefreshEnabled = not AutoRefreshEnabled
-    AutoRefreshButton.Text = AutoRefreshEnabled and "🔄 Auto: ON" or "⏸️ Auto: OFF"
-    AutoRefreshButton.BackgroundColor3 = AutoRefreshEnabled and Color3.fromRGB(50, 150, 50) or Color3.fromRGB(150, 50, 50)
-end
-
 -- Button connections
 CloseButton.MouseButton1Click:Connect(function()
     ScreenGui:Destroy()
 end)
 
-AutoRefreshButton.MouseButton1Click:Connect(ToggleAutoRefresh)
 RefreshButton.MouseButton1Click:Connect(FetchServers)
 SortButton.MouseButton1Click:Connect(SortByPing)
 JoinButton.MouseButton1Click:Connect(JoinServer)
-DebugButton.MouseButton1Click:Connect(ShowDebug)
-
--- Auto-refresh loop
-spawn(function()
-    while wait(AUTO_REFRESH_INTERVAL) do
-        if AutoRefreshEnabled and not IsRefreshing then
-            FetchServers()
-        end
-    end
-end)
-
--- Initial setup
-wait(1)
-StatusLabel.Text = "🔄 Getting Universe ID..."
-UniverseId = GetUniverseId()
-wait(0.5)
-FetchServers()
 
 -- Notification
 game:GetService("StarterGui"):SetCore("SendNotification", {
-    Title = "Server Browser (UNIVERSAL)";
-    Text = "Converts PlaceID→UniverseID! Works on ALL games now!";
-    Duration = 6;
+    Title = "Server Browser (Multi-Game)";
+    Text = "Tests v1 & v2 APIs! Works on more games. Click Refresh!";
+    Duration = 5;
 })
 
 print("===========================================")
-print("SERVER BROWSER - ULTRA UNIVERSAL FIX")
+print("SERVER BROWSER - MULTI-GAME UNIVERSAL!")
 print("===========================================")
-print("✅ Converts Place ID → Universe ID")
-print("✅ Works on ROOT PLACE + SUB-PLACES")
-print("✅ CoreGui protection enabled")
-print("✅ Auto-refresh every " .. AUTO_REFRESH_INTERVAL .. "s")
+print("✅ Tests " .. #APIVersions .. " API versions")
+print("✅ Tests " .. #ProxyDomains .. " proxy domains")
+print("✅ Caches working method for speed")
+print("✅ NO auto-refresh (manual only)")
+print("✅ Works across different games!")
 print("Place ID:", PlaceId)
-print("Universe ID:", UniverseId)
 print("===========================================")
